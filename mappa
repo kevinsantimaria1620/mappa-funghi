@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mappa Funghi AI - Geoticket Style</title>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Leaflet Dynamic Heatmap Plugin -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    
+    <style>
+        :root {
+            --bg-dark: #0a0a0c;
+            --panel-bg: rgba(22, 22, 26, 0.90);
+            --text-light: #f5f5f7;
+            --accent-green: #32d74b;
+            --accent-yellow: #ffd60a;
+            --accent-red: #ff453a;
+            --accent-orange: #ff9500;
+        }
+        
+        body { 
+            margin: 0; padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: var(--bg-dark); 
+            color: var(--text-light); 
+            overflow: hidden; 
+        }
+        
+        #map { height: 100vh; width: 100vw; background: #0b0d12; }
+        
+        /* FILTRO SCURO AD ALTO CONTRASTO SULLA MAPPA BASE */
+        .dark-tiles .leaflet-tile-pane {
+            filter: brightness(0.75) invert(1) contrast(1.4) hue-rotate(200deg) saturate(0.3);
+        }
+
+        /* Stile Pannelli Fluttuanti Glassmorphism */
+        .app-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.8);
+            color: var(--text-light);
+        }
+
+        /* Selettore Stile Mappa (In alto a destra) */
+        .layer-selector {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            gap: 6px;
+            padding: 6px;
+        }
+
+        .layer-btn {
+            background: rgba(255,255,255,0.08);
+            border: none;
+            color: #a1a1a6;
+            padding: 8px 14px;
+            border-radius: 14px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .layer-btn.active {
+            background: rgba(255,255,255,0.25);
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+
+        /* Bottone per Aprire la Lista Top Zone */
+        .top-zones-toggle {
+            position: absolute;
+            top: 20px;
+            left: 60px;
+            z-index: 1000;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 800;
+            background: linear-gradient(135deg, rgba(255, 149, 0, 0.9), rgba(255, 45, 85, 0.9));
+            color: #fff;
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 15px rgba(255, 45, 85, 0.4);
+        }
+
+        /* Pannello Laterale Top Zone per Regione */
+        .top-zones-drawer {
+            position: absolute;
+            top: 75px;
+            left: 20px;
+            width: 320px;
+            max-height: calc(100vh - 200px);
+            z-index: 1000;
+            padding: 16px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .top-zones-drawer.open { display: block; }
+
+        .drawer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 8px;
+        }
+
+        .drawer-header h3 { margin: 0; font-size: 15px; font-weight: 800; color: #fff; }
+        .close-btn { background: none; border: none; color: #a1a1a6; font-size: 18px; cursor: pointer; }
+
+        .region-block { margin-bottom: 14px; }
+        .region-name { font-size: 13px; font-weight: 800; color: var(--accent-orange); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        
+        .zone-item {
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 8px 10px;
+            margin-bottom: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+
+        .zone-item:hover { background: rgba(255,255,255,0.15); }
+        .zone-name { font-weight: 600; color: #fff; }
+        .zone-tag { font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; }
+        
+        /* Legenda Fluttuante Bottom */
+        .legend-container {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 360px;
+            padding: 16px 20px;
+            z-index: 1000;
+        }
+        
+        .legend-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 8px;
+        }
+        
+        .legend-header h4 { margin: 0; font-size: 14px; font-weight: 700; }
+        .badge-ai { 
+            background: linear-gradient(135deg, #FF9500, #FF2D55); 
+            padding: 3px 8px; border-radius: 10px; 
+            font-size: 10px; font-weight: 800; text-transform: uppercase;
+        }
+
+        .legend-item { display: flex; align-items: center; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+        .legend-item:last-child { margin-bottom: 0; }
+        .color-dot { 
+            width: 12px; height: 12px; border-radius: 50%; 
+            margin-right: 12px; 
+            box-shadow: 0 0 10px currentColor; 
+        }
+        
+        .color-green { background: var(--accent-green); color: var(--accent-green); }
+        .color-yellow { background: var(--accent-yellow); color: var(--accent-yellow); }
+        .color-red { background: var(--accent-red); color: var(--accent-red); }
+
+        /* Pop-up personalizzati */
+        .leaflet-popup-content-wrapper { 
+            background: var(--panel-bg); color: var(--text-light); 
+            backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.7);
+        }
+        .leaflet-popup-tip { background: var(--panel-bg); }
+        
+        .popup-title { font-size: 14px; font-weight: 800; margin: 0 0 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; }
+        .popup-stat { margin-bottom: 4px; font-size: 12px; color: #a1a1a6; }
+        .popup-stat b { color: #fff; }
+        
+        canvas.leaflet-heatmap-layer { mix-blend-mode: screen; opacity: 0.85 !important; }
+        .leaflet-control-zoom { border: none !important; margin-top: 20px !important; }
+        .leaflet-bar a { background-color: var(--panel-bg) !important; color: white !important; border-color: rgba(255,255,255,0.1) !important; }
+    </style>
+</head>
+<body class="dark-tiles">
+
+<div id="map"></div>
+
+<!-- Bottone Top Zone -->
+<button class="top-zones-toggle" onclick="toggleDrawer()">
+    <span>🔥 Top 5 Zone per Regione</span>
+</button>
+
+<!-- Pannello Scorrimento Top Zone -->
+<div class="app-panel top-zones-drawer" id="topDrawer">
+    <div class="drawer-header">
+        <h3>Migliori Zone di Raccolta</h3>
+        <button class="close-btn" onclick="toggleDrawer()">✕</button>
+    </div>
+    <div id="topZonesList"></div>
+</div>
+
+<!-- Selettore Mappa Sfondo -->
+<div class="app-panel layer-selector">
+    <button class="layer-btn active" onclick="cambiaSfondo('scura', event)">Scura AI</button>
+    <button class="layer-btn" onclick="cambiaSfondo('satellite', event)">Satellite</button>
+    <button class="layer-btn" onclick="cambiaSfondo('standard', event)">Chiara</button>
+</div>
+
+<!-- Legenda Stile Geoticket -->
+<div class="app-panel legend-container">
+    <div class="legend-header">
+        <h4>Previsioni Mappa Funghi</h4>
+        <span class="badge-ai">AI LIVE</span>
+    </div>
+    <div class="legend-item">
+        <div class="color-dot color-green"></div> Crescita Alta
+    </div>
+    <div class="legend-item">
+        <div class="color-dot color-yellow"></div> In Incubazione
+    </div>
+    <div class="legend-item">
+        <div class="color-dot color-red"></div> Fermo / Inadatto
+    </div>
+</div>
+
+<script>
+    var map = L.map('map', { zoomControl: false }).setView([45.6, 10.2], 7);
+    L.control.zoom({ position: 'topleft' }).addTo(map);
+
+    var osmUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    var satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+
+    var currentTileLayer = L.tileLayer(osmUrl, { attribution: '&copy; OpenStreetMap', maxZoom: 18, minZoom: 6 }).addTo(map);
+
+    function cambiaSfondo(tipo, evt) {
+        document.querySelectorAll('.layer-btn').forEach(btn => btn.classList.remove('active'));
+        if (evt && evt.target) evt.target.classList.add('active');
+
+        if (tipo === 'scura') {
+            document.body.className = 'dark-tiles';
+            currentTileLayer.setUrl(osmUrl);
+        } else if (tipo === 'satellite') {
+            document.body.className = '';
+            currentTileLayer.setUrl(satelliteUrl);
+        } else if (tipo === 'standard') {
+            document.body.className = '';
+            currentTileLayer.setUrl(osmUrl);
+        }
+    }
+
+    function toggleDrawer() {
+        document.getElementById('topDrawer').classList.toggle('open');
+    }
+
+    const topZoneRegionali = {
+        "Piemonte": [
+            { nome: "Val Sesia / Alagna", lat: 45.85, lon: 8.00 },
+            { nome: "Valli Cuneesi / Val Vermenagna", lat: 44.28, lon: 7.53 },
+            { nome: "Val di Susa e Chisone", lat: 45.13, lon: 7.05 },
+            { nome: "Val Vigezzo (VCO)", lat: 46.13, lon: 8.50 },
+            { nome: "Appennino Alessandrino", lat: 44.68, lon: 8.85 }
+        ],
+        "Valle d'Aosta": [
+            { nome: "Val d'Ayas", lat: 45.81, lon: 7.73 },
+            { nome: "Valtournenche", lat: 45.88, lon: 7.60 },
+            { nome: "Val de Rhêmes", lat: 45.56, lon: 7.12 },
+            { nome: "Val Veny / Courmayeur", lat: 45.78, lon: 6.90 },
+            { nome: "Valle del Gran San Bernardo", lat: 45.85, lon: 7.20 }
+        ],
+        "Lombardia": [
+            { nome: "Valtellina / Val Masino", lat: 46.22, lon: 9.63 },
+            { nome: "Val Camonica", lat: 46.02, lon: 10.33 },
+            { nome: "Val Brembana", lat: 45.96, lon: 9.68 },
+            { nome: "Val Seriana", lat: 45.91, lon: 9.95 },
+            { nome: "Oltrepò Pavese (Monte Lesima)", lat: 44.68, lon: 9.25 }
+        ],
+        "Trentino-Alto Adige": [
+            { nome: "Val di Fiemme / Val di Fassa", lat: 46.28, lon: 11.58 },
+            { nome: "Val Rendena / Campiglio", lat: 46.16, lon: 10.76 },
+            { nome: "Val di Sole e Pejo", lat: 46.35, lon: 10.78 },
+            { nome: "Val Pusteria / Bressanone", lat: 46.75, lon: 11.90 },
+            { nome: "Altopiano di Pinè / Lagorai", lat: 46.13, lon: 11.24 }
+        ],
+        "Veneto": [
+            { nome: "Cadore e Ampezzano", lat: 46.48, lon: 12.37 },
+            { nome: "Altopiano di Asiago 7 Comuni", lat: 45.87, lon: 11.51 },
+            { nome: "Alpago e Cansiglio", lat: 46.12, lon: 12.40 },
+            { nome: "Lessinia (VR)", lat: 45.68, lon: 11.02 },
+            { nome: "Agordino / Val Cordevole", lat: 46.28, lon: 11.98 }
+        ],
+        "Friuli-Venezia Giulia": [
+            { nome: "Tarvisiano e Val Canale", lat: 46.50, lon: 13.57 },
+            { nome: "Carnia / Tolmezzo", lat: 46.40, lon: 12.98 },
+            { nome: "Val Cellina", lat: 46.17, lon: 12.52 },
+            { nome: "Piancavallo", lat: 46.10, lon: 12.51 },
+            { nome: "Valli del Natisone", lat: 46.15, lon: 13.50 }
+        ],
+        "Liguria": [
+            { nome: "Val d'Aveto / Monte Penna", lat: 44.52, lon: 9.45 },
+            { nome: "Val Trebbia Ligure", lat: 44.57, lon: 9.18 },
+            { nome: "Val Bormida (SV)", lat: 44.35, lon: 8.23 },
+            { nome: "Val di Vara (SP)", lat: 44.30, lon: 9.75 },
+            { nome: "Alpi Liguri / Triora", lat: 43.99, lon: 7.76 }
+        ],
+        "Emilia-Romagna": [
+            { nome: "Val di Taro / Borgotaro", lat: 44.48, lon: 9.76 },
+            { nome: "Val Nure e Val Trebbia", lat: 44.60, lon: 9.53 },
+            { nome: "Appennino Reggiano / Ventasso", lat: 44.38, lon: 10.28 },
+            { nome: "Alto Appennino Modenese", lat: 44.18, lon: 10.78 },
+            { nome: "Appennino Bolognese / Corno alle Scale", lat: 44.12, lon: 10.83 }
+        ]
+    };
+
+    function popolaTopZone() {
+        const container = document.getElementById('topZonesList');
+        let html = '';
+
+        for (const [regione, zone] of Object.entries(topZoneRegionali)) {
+            html += `<div class="region-block">
+                        <div class="region-name">${regione}</div>`;
+            zone.forEach(z => {
+                html += `<div class="zone-item" onclick="volaA(${z.lat}, ${z.lon}, '${z.nome}')">
+                            <span class="zone-name">${z.nome}</span>
+                            <span class="zone-tag" style="background: rgba(50, 215, 75, 0.2); color: #32d74b;">TOP</span>
+                        </div>`;
+            });
+            html += `</div>`;
+        }
+        container.innerHTML = html;
+    }
+
+    function volaA(lat, lon, nome) {
+        map.flyTo([lat, lon], 11, { duration: 1.5 });
+        if (window.innerWidth < 768) toggleDrawer();
+    }
+
+    popolaTopZone();
+
+    function generaDatiSimulati() {
+        let mockData = [];
+        for (const [regione, zone] of Object.entries(topZoneRegionali)) {
+            zone.forEach(z => {
+                let punteggio = Math.random();
+                let stato = punteggio > 0.6 ? "Crescita" : (punteggio > 0.3 ? "In Incubazione" : "Fermo");
+                let colore = punteggio > 0.6 ? "#32d74b" : (punteggio > 0.3 ? "#ffd60a" : "#ff453a");
+                mockData.push({
+                    nome: z.nome, lat: z.lat, lon: z.lon,
+                    pioggia_14gg: Math.round(punteggio * 50),
+                    temp_oggi: Math.round(12 + punteggio * 8),
+                    probabilita: stato, colore: colore, intensita: punteggio
+                });
+            });
+        }
+        return mockData;
+    }
+
+    fetch('dati_funghi.json')
+        .then(res => res.ok ? res.json() : generaDatiSimulati())
+        .catch(() => generaDatiSimulati())
+        .then(zoneFunghi => {
+            let heatPoints = [];
+
+            zoneFunghi.forEach(zona => {
+                heatPoints.push([zona.lat, zona.lon, zona.intensita]);
+
+                L.circle([zona.lat, zona.lon], { radius: 7000, opacity: 0, fillOpacity: 0, interactive: true })
+                .bindPopup(`
+                    <div class="popup-title" style="color: ${zona.colore};">
+                        ${(zona.nome || 'Zona Rilevata').toUpperCase()} - ${zona.probabilita.toUpperCase()}
+                    </div>
+                    <div class="popup-stat">Pioggia cumulata (14gg): <b>${zona.pioggia_14gg} mm</b></div>
+                    <div class="popup-stat">Temp. stimata suolo: <b>${zona.temp_oggi} °C</b></div>
+                `)
+                .addTo(map);
+            });
+
+            function calcolaImpostazioniHeatmap() {
+                let zoomAttuale = map.getZoom();
+                let fattoreScala = Math.pow(2, zoomAttuale - 7); 
+                let raggioBase = Math.min(22 * fattoreScala, 340); 
+                return {
+                    radius: Math.max(raggioBase, 14),
+                    blur: Math.max(raggioBase * 0.7, 9),
+                    maxZoom: 18, max: 1.0, minOpacity: 0.2,
+                    gradient: { 0.2: '#ff453a', 0.55: '#ffd60a', 1.0: '#32d74b' }
+                };
+            }
+
+            var radarFunghi = L.heatLayer(heatPoints, calcolaImpostazioniHeatmap()).addTo(map);
+            map.on('zoomend', () => radarFunghi.setOptions(calcolaImpostazioniHeatmap()));
+        });
+</script>
+</body>
+</html>
