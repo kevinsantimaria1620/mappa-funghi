@@ -1,36 +1,36 @@
 name: Aggiorna Mappa Funghi
 
 on:
-schedule:
-- cron: '0 5 * * *' # Esecuzione automatica ogni mattina alle 05:00 UTC
-workflow_dispatch: # Permette l'esecuzione manuale da GitHub
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
 
 jobs:
-update-data:
-runs-on: ubuntu-latest
-steps:
-- name: Checkout del codice
-uses: actions/checkout@v3
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v3
 
-  - name: Configurazione ambiente Python
-    uses: actions/setup-python@v4
-    with:
-      python-version: '3.10'
+      - name: Configurazione ambiente Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-  - name: Installazione dipendenze
-    run: |
-      python -m pip install --upgrade pip
-      pip install requests
+      - name: Installazione dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
 
-  - name: Esecuzione algoritmo di fertilità
-    env:
-      PYTHONUNBUFFERED: "1"
-    run: python aggiorna_dati.py
+      - name: Esecuzione algoritmo di fertilità
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python aggiorna_dati.py
 
-  - name: Salvataggio e Push dati aggiornati
-    run: |
-      git config --local user.email "action@github.com"
-      git config --local user.name "GitHub Action"
-      git add dati_funghi.json
-      git diff-index --quiet HEAD || git commit -m "Aggiornamento automatico dati funghi [skip ci]"
-      git push
+      - name: Salvataggio e Push dati aggiornati
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add dati_funghi.json
+          git diff-index --quiet HEAD || git commit -m "Aggiornamento automatico dati funghi [skip ci]"
+          git push
