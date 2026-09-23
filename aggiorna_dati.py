@@ -54,14 +54,17 @@ zone_top_nord_italia = [
     {"nome": "Appennino Bolognese / Corno alle Scale", "lat": 44.12, "lon": 10.83}
 ]
 
+# Definizione area di scansione per la Heatmap
 lat_min, lat_max = 44.0, 46.8
 lon_min, lon_max = 7.0, 13.5
 step = 0.25
 
 coords_dict = {}
+# Registra prima le top zone
 for z in zone_top_nord_italia:
     coords_dict[(round(z["lat"], 2), round(z["lon"], 2))] = z["nome"]
 
+# Riempi il resto della griglia per la Heatmap
 lat = lat_min
 while lat <= lat_max:
     lon = lon_min
@@ -77,8 +80,10 @@ dati_finali = []
 
 print(f"Interrogazione Open-Meteo per {len(coords)} punti nel Nord Italia...", flush=True)
 
-chunk_size = 25
+# ---> MODIFICA 1: Ridotto a 10 località per blocco (non più 25) per alleggerire la richiesta
+chunk_size = 10 
 headers = {'User-Agent': 'MappaFunghiBot/1.0'}
+max_retries = 3 # ---> MODIFICA 2: Sistema di ri-tentativo automatico
 
 for i in range(0, len(coords), chunk_size):
     chunk = coords[i:i+chunk_size]
@@ -89,65 +94,71 @@ for i in range(0, len(coords), chunk_size):
     
     print(f" Scaricamento blocco {i//chunk_size + 1}/{(len(coords)+chunk_size-1)//chunk_size}...", flush=True)
     
-    try:
-        response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code == 200:
-            data = response.json()
-            results = data if isinstance(data, list) else [data]
-            
-            for idx, loc_data in enumerate(results):
-                if "daily" not in loc_data: 
-                    continue
+    for attempt in range(max_retries):
+        try:
+            # ---> MODIFICA 3: Timeout aumentato a 30 secondi
+            response = requests.get(url, headers=headers, timeout=30) 
+            if response.status_code == 200:
+                data = response.json()
+                results = data if isinstance(data, list) else [data]
+                
+                for idx, loc_data in enumerate(results):
+                    if "daily" not in loc_data: 
+                        continue
+                        
+                    piogge = loc_data["daily"]["precipitation_sum"]
+                    temps = loc_data["daily"]["temperature_2m_mean"]
+                    venti = loc_data["daily"]["wind_speed_10m_max"]
                     
-                piogge = loc_data["daily"]["precipitation_sum"]
-                temps = loc_data["daily"]["temperature_2m_mean"]
-                venti = loc_data["daily"]["wind_speed_10m_max"]
-                
-                pioggia_14gg = sum([p for p in piogge[:-1] if p is not None])
-                temp_oggi = temps[-1] if temps[-1] is not None else 15
-                vento_oggi = venti[-1] if venti[-1] is not None else 5
-                
-                punteggio = 0
-                if pioggia_14gg >= 40: 
-                    punteggio += 3
-                elif pioggia_14gg >= 20: 
-                    punteggio += 1.5
-                
-                if 14 <= temp_oggi <= 22: 
-                    punteggio += 2
-                elif (10 <= temp_oggi < 14) or (22 < temp_oggi <= 25): 
-                    punteggio += 1
-                
-                if vento_oggi < 15: 
-                    punteggio += 1
-                
-                if punteggio >= 5: 
-                    prob, colore, intensita = "Crescita", "#32d74b", 1.0
-                elif punteggio >= 3: 
-                    prob, colore, intensita = "In Incubazione", "#ffd60a", 0.55
-                else: 
-                    prob, colore, intensita = "Fermo", "#ff453a", 0.2
-                
-                c_lat, c_lon = chunk[idx][0], chunk[idx][1]
-                nome_zona = coords_dict.get((c_lat, c_lon))
-                
-                dati_finali.append({
-                    "nome": nome_zona,
-                    "lat": c_lat,
-                    "lon": c_lon,
-                    "pioggia_14gg": round(pioggia_14gg, 1),
-                    "temp_oggi": round(temp_oggi, 1),
-                    "vento_oggi": round(vento_oggi, 1),
-                    "probabilita": prob,
-                    "colore": colore,
-                    "intensita": intensita
-                })
-        else:
-            print(f" Attenzione: HTTP {response.status_code}", flush=True)
-    except Exception as e:
-        print(f" Errore nel blocco {i}: {e}", flush=True)
+                    pioggia_14gg = sum([p for p in piogge[:-1] if p is not None])
+                    temp_oggi = temps[-1] if temps[-1] is not None else 15
+                    vento_oggi = venti[-1] if venti[-1] is not None else 5
+                    
+                    punteggio = 0
+                    if pioggia_14gg >= 40: 
+                        punteggio += 3
+                    elif pioggia_14gg >= 20: 
+                        punteggio += 1.5
+                    
+                    if 14 <= temp_oggi <= 22: 
+                        punteggio += 2
+                    elif (10 <= temp_oggi < 14) or (22 < temp_oggi <= 25): 
+                        punteggio += 1
+                    
+                    if vento_oggi < 15: 
+                        punteggio += 1
+                    
+                    if punteggio >= 5: 
+                        prob, colore, intensita = "Crescita", "#32d74b", 1.0
+                    elif punteggio >= 3: 
+                        prob, colore, intensita = "In Incubazione", "#ffd60a", 0.55
+                    else: 
+                        prob, colore, intensita = "Fermo", "#ff453a", 0.2
+                    
+                    c_lat, c_lon = chunk[idx][0], chunk[idx][1]
+                    nome_zona = coords_dict.get((c_lat, c_lon))
+                    
+                    dati_finali.append({
+                        "nome": nome_zona,
+                        "lat": c_lat,
+                        "lon": c_lon,
+                        "pioggia_14gg": round(pioggia_14gg, 1),
+                        "temp_oggi": round(temp_oggi, 1),
+                        "vento_oggi": round(vento_oggi, 1),
+                        "probabilita": prob,
+                        "colore": colore,
+                        "intensita": intensita
+                    })
+                break # Il blocco è andato a buon fine, esce dal ciclo dei tentativi
+            else:
+                print(f" Attenzione: HTTP {response.status_code}. Riprovo...", flush=True)
+                time.sleep(2)
+        except Exception as e:
+            print(f" Errore (tentativo {attempt+1}/{max_retries}): {e}", flush=True)
+            time.sleep(2) # Aspetta 2 secondi prima di riprovare
     
-    time.sleep(0.3)
+    # Pausa più lunga tra un blocco e l'altro per far "respirare" le API
+    time.sleep(1.5)
 
 with open('dati_funghi.json', 'w', encoding='utf-8') as f:
     json.dump(dati_finali, f, ensure_ascii=False, indent=4)
