@@ -1,6 +1,6 @@
 import requests
 import json
-import os
+import time
 
 # ELENCO DELLE TOP 5 ZONE DI RACCOLTA PER OGNUNA DELLE 8 REGIONI DEL NORD ITALIA
 zone_top_nord_italia = [
@@ -56,11 +56,11 @@ zone_top_nord_italia = [
 
 lat_min, lat_max = 44.0, 46.8
 lon_min, lon_max = 7.0, 13.5
-step = 0.20
+step = 0.25
 
 coords_dict = {}
 for z in zone_top_nord_italia:
-    coords_dict[(z["lat"], z["lon"])] = z["nome"]
+    coords_dict[(round(z["lat"], 2), round(z["lon"], 2))] = z["nome"]
 
 lat = lat_min
 while lat <= lat_max:
@@ -75,9 +75,11 @@ while lat <= lat_max:
 coords = list(coords_dict.keys())
 dati_finali = []
 
-print(f"Interrogazione Open-Meteo per {len(coords)} punti chiave del Nord Italia...")
+print(f"Interrogazione Open-Meteo per {len(coords)} punti nel Nord Italia...", flush=True)
 
-chunk_size = 35
+chunk_size = 25
+headers = {'User-Agent': 'MappaFunghiBot/1.0'}
+
 for i in range(0, len(coords), chunk_size):
     chunk = coords[i:i+chunk_size]
     lats = ",".join([str(c[0]) for c in chunk])
@@ -85,8 +87,10 @@ for i in range(0, len(coords), chunk_size):
     
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lats}&longitude={lons}&daily=temperature_2m_mean,precipitation_sum,wind_speed_10m_max&past_days=14&forecast_days=1&timezone=Europe%2FRome"
     
+    print(f" Scaricamento blocco {i//chunk_size + 1}/{(len(coords)+chunk_size-1)//chunk_size}...", flush=True)
+    
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=headers, timeout=15)
         if response.status_code == 200:
             data = response.json()
             results = data if isinstance(data, list) else [data]
@@ -138,10 +142,14 @@ for i in range(0, len(coords), chunk_size):
                     "colore": colore,
                     "intensita": intensita
                 })
+        else:
+            print(f" Attenzione: HTTP {response.status_code}", flush=True)
     except Exception as e:
-        print(f"Errore durante il recupero: {e}")
+        print(f" Errore nel blocco {i}: {e}", flush=True)
+    
+    time.sleep(0.3)
 
 with open('dati_funghi.json', 'w', encoding='utf-8') as f:
     json.dump(dati_finali, f, ensure_ascii=False, indent=4)
 
-print("Dati aggiornati e salvati con successo in dati_funghi.json!")
+print(f" Fatto! {len(dati_finali)} punti salvati in dati_funghi.json", flush=True)
